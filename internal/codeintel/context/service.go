@@ -16,7 +16,6 @@ import (
 	"github.com/sourcegraph/sourcegraph/internal/codeintel/codenav"
 	codenavtypes "github.com/sourcegraph/sourcegraph/internal/codeintel/codenav"
 	codenavshared "github.com/sourcegraph/sourcegraph/internal/codeintel/codenav/shared"
-	scipstore "github.com/sourcegraph/sourcegraph/internal/codeintel/context/internal/scipstore"
 	resolverstubs "github.com/sourcegraph/sourcegraph/internal/codeintel/resolvers"
 	"github.com/sourcegraph/sourcegraph/internal/codeintel/shared/symbols"
 	"github.com/sourcegraph/sourcegraph/internal/codeintel/types"
@@ -28,7 +27,6 @@ import (
 
 type Service struct {
 	codenavSvc      CodeNavService
-	scipstore       scipstore.ScipStore
 	repostore       database.RepoStore
 	syntectClient   *gosyntect.Client
 	gitserverClient gitserver.Client
@@ -37,7 +35,6 @@ type Service struct {
 
 func newService(
 	observationCtx *observation.Context,
-	scipstore scipstore.ScipStore,
 	repostore database.RepoStore,
 	codenavSvc CodeNavService,
 	syntectClient *gosyntect.Client,
@@ -45,7 +42,6 @@ func newService(
 ) *Service {
 	return &Service{
 		codenavSvc:      codenavSvc,
-		scipstore:       scipstore,
 		repostore:       repostore,
 		syntectClient:   syntectClient,
 		gitserverClient: gitserverClient,
