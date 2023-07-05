@@ -127,24 +127,13 @@ func (s *store) GetBulkMonikerLocations(ctx context.Context, tableName string, u
 	explodedSymbols := []string{}
 	symbolNames := make([]string, 0, len(monikers))
 	for _, arg := range monikers {
-		symbolNames = append(symbolNames, arg.Identifier)
-
-		// fmt.Println("args.Identifier: ", arg.Identifier)
-		s, err := symbols.NewExplodedSymbol(arg.Identifier)
+		explodedSymbol, err := explodeSymbol(arg.Identifier)
 		if err != nil {
 			return nil, 0, err
 		}
-		explodedSymbols = append(
-			explodedSymbols,
-			fmt.Sprintf(
-				"%s$%s$%s$%s$%s",
-				base64.StdEncoding.EncodeToString([]byte(s.Scheme)),
-				base64.StdEncoding.EncodeToString([]byte(s.PackageManager)),
-				base64.StdEncoding.EncodeToString([]byte(s.PackageName)),
-				base64.StdEncoding.EncodeToString([]byte(s.PackageVersion)),
-				base64.StdEncoding.EncodeToString([]byte(s.Descriptor)),
-			),
-		)
+
+		symbolNames = append(symbolNames, arg.Identifier)
+		explodedSymbols = append(explodedSymbols, explodedSymbol)
 	}
 
 	query := sqlf.Sprintf(
@@ -270,12 +259,36 @@ func (s *store) getLocations(
 			locations = append(locations, convertSCIPRangesToLocations(ranges, bundleID, path)...)
 		}
 
-		locs, err := s.GetLocationByExplodedSymbol(ctx, occurrence.Symbol, bundleID, scipFieldName, path)
-		if err != nil {
-			return nil, 0, err
-		}
+		if occurrence.Symbol != "" && !scip.IsLocalSymbol(occurrence.Symbol) {
+			explodedSymbol, err := explodeSymbol(occurrence.Symbol)
+			if err != nil {
+				return nil, 0, err
+			}
 
-		locations = append(locations, locs...)
+			monikerLocations, err := s.scanQualifiedMonikerLocations(s.db.Query(ctx, sqlf.Sprintf(
+				locationsSymbolSearchQuery,
+				pq.Array([]string{occurrence.Symbol}),
+				pq.Array([]int{bundleID}),
+				pq.Array([]string{explodedSymbol}),
+				pq.Array([]int{bundleID}),
+				sqlf.Sprintf(scipFieldName),
+				bundleID,
+				path,
+				sqlf.Sprintf(scipFieldName),
+			)))
+			if err != nil {
+				return nil, 0, err
+			}
+			for _, monikerLocation := range monikerLocations {
+				for _, row := range monikerLocation.Locations {
+					locations = append(locations, shared.Location{
+						DumpID: monikerLocation.DumpID,
+						Path:   row.URI,
+						Range:  newRange(row.StartLine, row.StartCharacter, row.EndLine, row.EndCharacter),
+					})
+				}
+			}
+		}
 
 		if len(locations) > 0 {
 			totalCount := len(locations)
@@ -649,8 +662,15 @@ func (s *store) GetMinimalBulkMonikerLocations(ctx context.Context, tableName st
 	}
 
 	symbolNames := make([]string, 0, len(monikers))
+	explodedSymbolNames := make([]string, 0, len(monikers))
 	for _, arg := range monikers {
+		explodedSymbol, err := explodeSymbol(arg.Identifier)
+		if err != nil {
+			return nil, 0, err
+		}
+
 		symbolNames = append(symbolNames, arg.Identifier)
+		explodedSymbolNames = append(explodedSymbolNames, explodedSymbol)
 	}
 
 	var skipConds []*sqlf.Query
@@ -667,6 +687,8 @@ func (s *store) GetMinimalBulkMonikerLocations(ctx context.Context, tableName st
 	query := sqlf.Sprintf(
 		minimalBulkMonikerResultsQuery,
 		pq.Array(symbolNames),
+		pq.Array(uploadIDs),
+		pq.Array(explodedSymbolNames),
 		pq.Array(uploadIDs),
 		sqlf.Sprintf(fieldName),
 		sqlf.Sprintf(fieldName),

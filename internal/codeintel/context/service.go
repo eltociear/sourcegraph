@@ -126,7 +126,11 @@ func (s *Service) GetPreciseContext(ctx context.Context, args *resolverstubs.Get
 	// mapping instead. This block should become a single function call after that
 	// transformation.
 
-	scipNamesBySyntectName, err := func() (map[string][]*types.SCIPNames, error) {
+	scipNamesBySyntectName, err := func() (map[string][]*symbols.ExplodedSymbol, error) {
+		for _, s := range symbolNames {
+			fmt.Printf("> %q\n", s)
+		}
+
 		// TODO: Either pass a slice of uploads or loop thru uploads and pass the ids to fix this hardcoding of the first
 		scipNames, err := s.codenavSvc.GetFullSCIPNameByDescriptor(ctx, []int{uploads[0].ID}, symbolNames)
 		if err != nil {
@@ -170,29 +174,23 @@ func (s *Service) GetPreciseContext(ctx context.Context, args *resolverstubs.Get
 	}
 	preciseDataList := []*preciseData{}
 
-	for syntectName, names := range scipNamesBySyntectName {
-		for _, name := range names {
-			ident := name.GetIdentifier()
+	for ident, syntectNames := range revmap {
+		// DEBUGGING
+		fmt.Printf("> Definitions for identifier %q\n", ident)
 
-			// TODO - these are duplicated and should also be batched
-			fmt.Printf("> Fetching definitions of %q\n", ident)
+		// TODO - batch more
+		ul, err := s.codenavSvc.NewGetDefinitionsBySymbolNames(ctx, requestArgs, reqState, []string{ident})
+		if err != nil {
+			return nil, err
+		}
 
-			for _, upload := range uploads {
-				loc, err := s.codenavSvc.GetLocationByExplodedSymbol(ctx, ident, upload.ID, "definition_ranges")
-				if err != nil {
-					return nil, err
-				}
-				ul, err := s.codenavSvc.GetUploadLocations(ctx, requestArgs, reqState, loc, true)
-				if err != nil {
-					return nil, err
-				}
-
-				preciseDataList = append(preciseDataList, &preciseData{
-					syntectName: syntectName,
-					symbolName:  ident,
-					location:    ul,
-				})
-			}
+		// TODO - should this ever be non-singleton?
+		for syntectName := range syntectNames {
+			preciseDataList = append(preciseDataList, &preciseData{
+				syntectName: syntectName,
+				symbolName:  ident,
+				location:    ul,
+			})
 		}
 	}
 

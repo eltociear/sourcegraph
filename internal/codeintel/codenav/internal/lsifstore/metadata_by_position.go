@@ -65,7 +65,13 @@ func (s *store) GetHover(ctx context.Context, bundleID int, path string, line, c
 		}
 
 		if _, ok := rangeBySymbol[occurrence.Symbol]; !ok {
+			explodedSymbol, err := explodeSymbol(occurrence.Symbol)
+			if err != nil {
+				return "", shared.Range{}, false, err
+			}
+
 			symbolNames = append(symbolNames, occurrence.Symbol)
+			explodedSymbols = append(explodedSymbols, explodedSymbol)
 			rangeBySymbol[occurrence.Symbol] = translateRange(scip.NewRange(occurrence.Range))
 
 			s, err := symbols.NewExplodedSymbol(occurrence.Symbol)

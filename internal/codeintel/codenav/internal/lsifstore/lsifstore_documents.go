@@ -3,6 +3,8 @@ package lsifstore
 import (
 	"bytes"
 	"context"
+	"sort"
+	"strings"
 
 	"github.com/keegancsmith/sqlf"
 	"github.com/lib/pq"
@@ -11,7 +13,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/sourcegraph/sourcegraph/internal/codeintel/shared/symbols"
-	"github.com/sourcegraph/sourcegraph/internal/codeintel/types"
 	"github.com/sourcegraph/sourcegraph/internal/codeintel/uploads/shared"
 	"github.com/sourcegraph/sourcegraph/internal/database/basestore"
 	"github.com/sourcegraph/sourcegraph/internal/database/dbutil"
@@ -55,7 +56,7 @@ WHERE
 	sid.document_path = %s
 `
 
-func (s *store) GetFullSCIPNameByDescriptor(ctx context.Context, uploadID []int, symbolNames []string) (names []*types.SCIPNames, err error) {
+func (s *store) GetFullSCIPNameByDescriptor(ctx context.Context, uploadID []int, symbolNames []string) (names []*symbols.ExplodedSymbol, err error) {
 	ctx, _, endObservation := s.operations.getFullSCIPNameByDescriptor.With(ctx, &err, observation.Args{Attrs: []attribute.KeyValue{}})
 	defer endObservation(1, observation.Args{})
 
@@ -64,25 +65,11 @@ func (s *store) GetFullSCIPNameByDescriptor(ctx context.Context, uploadID []int,
 		return nil, err
 	}
 
-	query := sqlf.Sprintf(getFullSCIPNameByDescriptorQuery, pq.Array(symbolNamesIlike), pq.Array(uploadID))
-	rows, err := s.db.Query(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { err = basestore.CloseRows(rows, err) }()
-
-	// fmt.Println("This is my query >>>", query.Query(sqlf.PostgresBindVar), query.Args())
-
-	for rows.Next() {
-		var n types.SCIPNames
-		if err := rows.Scan(&n.Scheme, &n.PackageManager, &n.PackageName, &n.PackageVersion, &n.Descriptor); err != nil {
-			return nil, err
-		}
-
-		names = append(names, &n)
-	}
-
-	return names, nil
+	return scanExplodedSymbols(s.db.Query(ctx, sqlf.Sprintf(
+		getFullSCIPNameByDescriptorQuery,
+		pq.Array(symbolNamesIlike),
+		pq.Array(uploadID),
+	)))
 }
 
 const getFullSCIPNameByDescriptorQuery = `
@@ -110,18 +97,31 @@ WHERE
 	ssl1.upload_id = ANY(%s);
 `
 
+var scanExplodedSymbols = basestore.NewSliceScanner(func(s dbutil.Scanner) (*symbols.ExplodedSymbol, error) {
+	var n symbols.ExplodedSymbol
+	err := s.Scan(&n.Scheme, &n.PackageManager, &n.PackageName, &n.PackageVersion, &n.Descriptor)
+	return &n, err
+})
+
 func formatSymbolNamesToLikeClause(symbolNames []string) ([]string, error) {
-	explodedSymbols := make([]string, 0, len(symbolNames))
+	trimmedDescriptorMap := make(map[string]struct{}, len(symbolNames))
 	for _, symbolName := range symbolNames {
 		ex, err := symbols.NewExplodedSymbol(symbolName)
 		if err != nil {
 			return nil, err
 		}
-		explodedSymbols = append(
-			explodedSymbols,
-			"%"+ex.Descriptor+"%",
-		)
+
+		parts := strings.Split(ex.Descriptor, "/")
+		trimmedDescriptorMap[parts[len(parts)-1]] = struct{}{}
 	}
 
-	return explodedSymbols, nil
+	descriptorWildcards := make([]string, 0, len(trimmedDescriptorMap))
+	for symbol := range trimmedDescriptorMap {
+		if symbol != "" {
+			descriptorWildcards = append(descriptorWildcards, "%"+symbol)
+		}
+	}
+	sort.Strings(descriptorWildcards)
+
+	return descriptorWildcards, nil
 }
