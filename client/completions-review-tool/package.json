@@ -24,9 +24,9 @@
   },
   "devDependencies": {
     "@remix-run/dev": "^1.17.0",
-    "@types/compression": "^1.7.2",
-    "@types/morgan": "^1.9.4",
-    "@types/react-table": "^7.7.14",
+    "@types/compression": "1.7.2",
+    "@types/morgan": "1.9.4",
+    "@types/react-table": "7.7.14",
     "dotenv": "^16.0.3",
     "npm-run-all": "^4.1.5"
   },

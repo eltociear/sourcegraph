@@ -1,5 +1,5 @@
 # Choose the latest LTS (Long Term Support) version of node as our base image
-FROM node:lts
+FROM node:lts@sha256:f4698d49371c8a9fa7dd78b97fb2a532213903066e47966542b3b1d403449da4
 
 ARG PROJECT_ROOT="."
 
