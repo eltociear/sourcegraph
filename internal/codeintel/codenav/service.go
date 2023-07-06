@@ -863,8 +863,6 @@ func (s *Service) GetDefinitions(ctx context.Context, args PositionalRequestArgs
 			return nil, errors.Wrap(err, "lsifStore.Definitions")
 		}
 
-		// fmt.Println("These are the locations on location path >>> ", locations)
-
 		if len(locations) > 0 {
 			// If we have a local definition, we won't find a better one and can exit early
 			return s.GetUploadLocations(ctx, args.RequestArgs, requestState, locations, true)
@@ -876,7 +874,6 @@ func (s *Service) GetDefinitions(ctx context.Context, args PositionalRequestArgs
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("LALALALALLALALALALALALALLALALA", orderedMonikers)
 	trace.AddEvent("TODO Domain Owner",
 		attribute.Int("numMonikers", len(orderedMonikers)),
 		attribute.String("monikers", monikersToString(orderedMonikers)))
@@ -898,8 +895,6 @@ func (s *Service) GetDefinitionBySymbolName(
 	ctx, trace, endObservation := observeResolver(ctx, &err, s.operations.getDefinitions, serviceObserverThreshold, observation.Args{Attrs: []attribute.KeyValue{}})
 	defer endObservation()
 
-	// fmt.Println("PASSSSSES GetDefinitionBySymbolName 1")
-
 	// TODO: START HERE
 	// Determine the set of uploads over which we need to perform a moniker search. This will
 	// include all all indexes which define one of the ordered monikers. This should not include
@@ -909,7 +904,6 @@ func (s *Service) GetDefinitionBySymbolName(
 		return nil, err
 	}
 
-	// fmt.Println("PASSSSSES GetDefinitionBySymbolName 2")
 	trace.AddEvent("TODO Domain Owner",
 		attribute.Int("numXrepoDefinitionUploads", len(uploads)),
 		attribute.String("xrepoDefinitionUploads", uploadIDsToString(uploads)))
@@ -919,8 +913,6 @@ func (s *Service) GetDefinitionBySymbolName(
 	if err != nil {
 		return nil, err
 	}
-
-	// fmt.Println("PASSSSSES GetDefinitionBySymbolName 3")
 
 	trace.AddEvent("TODO Domain Owner", attribute.Int("numXrepoLocations", len(locations)))
 

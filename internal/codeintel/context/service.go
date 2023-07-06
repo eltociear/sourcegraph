@@ -162,6 +162,7 @@ func (s *Service) GetPreciseContext(ctx context.Context, args *resolverstubs.Get
 				// We do a `descriptor ILIKE %syntectName%` in Postgres today, so this
 				// is a bit of a less lenient (we do suffix here instead of contains).
 				if strippedDescriptor := strip(ex.Descriptor); strippedDescriptor != "" && strip(scipName.Descriptor) == strippedDescriptor {
+					// TODO - debug match quality
 					if ex.Descriptor == scipName.Descriptor {
 						// fmt.Printf("EXACT: %q\n", ex.Descriptor)
 					} else if strings.HasSuffix(ex.Descriptor, scipName.Descriptor) {
