@@ -224,13 +224,16 @@ matching_symbol_names AS (
 			css.symbol_id,
 			p.scheme || ' ' || p.package_manager || ' ' || p.package_name || ' ' || p.package_version || ' ' || p.descriptor AS symbol_name
 		FROM symbols_parts2 p
-		JOIN codeintel_scip_symbols css ON css.upload_id = p.upload_id
+		JOIN codeintel_scip_symbols_lookup l5 ON l5.upload_id = p.upload_id AND l5.scip_name_type = 'DESCRIPTOR' AND l5.name = p.descriptor)
+		JOIN codeintel_scip_symbols_lookup l4 ON l4.upload_id = p.upload_id AND l4.parent_id = l5.id             AND l4.name = p.package_version)
+		JOIN codeintel_scip_symbols_lookup l3 ON l3.upload_id = p.upload_id AND l3.parent_id = l4.id             AND l3.name = p.package_name)
+		JOIN codeintel_scip_symbols_lookup l2 ON l2.upload_id = p.upload_id AND l2.parent_id = l3.id             AND l2.name = p.package_manager)
+		JOIN codeintel_scip_symbols_lookup l1 ON l1.upload_id = p.upload_id AND l1.parent_id = l2.id             AND l1.name = p.scheme)
+		JOIN codeintel_scip_symbols css ON
+			css.upload_id = p.upload_id AND
+			css.descriptor_id = l5.id
 		WHERE
-				EXISTS (SELECT 1 FROM codeintel_scip_symbols_lookup l1 WHERE l1.id = css.scheme_id          AND l1.upload_id = p.upload_id AND l1.scip_name_type = 'SCHEME'          AND l1.name = p.scheme)
-			AND EXISTS (SELECT 1 FROM codeintel_scip_symbols_lookup l2 WHERE l2.id = css.package_manager_id AND l2.upload_id = p.upload_id AND l2.scip_name_type = 'PACKAGE_MANAGER' AND l2.name = p.package_manager)
-			AND EXISTS (SELECT 1 FROM codeintel_scip_symbols_lookup l3 WHERE l3.id = css.package_name_id    AND l3.upload_id = p.upload_id AND l3.scip_name_type = 'PACKAGE_NAME'    AND l3.name = p.package_name)
-			AND EXISTS (SELECT 1 FROM codeintel_scip_symbols_lookup l4 WHERE l4.id = css.package_version_id AND l4.upload_id = p.upload_id AND l4.scip_name_type = 'PACKAGE_VERSION' AND l4.name = p.package_version)
-			AND EXISTS (SELECT 1 FROM codeintel_scip_symbols_lookup l5 WHERE l5.id = css.descriptor_id      AND l5.upload_id = p.upload_id AND l5.scip_name_type = 'DESCRIPTOR'      AND l5.name = p.descriptor)
+			TRUE
 	)
 )
 `
