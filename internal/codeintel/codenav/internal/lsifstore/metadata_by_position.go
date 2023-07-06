@@ -202,6 +202,17 @@ symbols_parts AS (
 		convert_from(decode(split_part(t.payload, '$', 5), 'base64'), 'utf-8') AS descriptor
 	FROM unnest(%s::text[]) AS t(payload)
 ),
+symbols_parts2 AS (
+	SELECT
+		s.scheme,
+		s.package_manager,
+		s.package_name,
+		s.package_version,
+		s.descriptor,
+		u.value AS upload_id
+	FROM symbols_parts s
+	CROSS JOIN unnest(%s::int[]) AS u(value)
+),
 -- Consume from the worktable results defined above. This will throw out any rows
 -- that still have a non-empty search field, as this indicates a proper prefix and
 -- therefore a non-match. The remaining rows will all be exact matches.
@@ -209,31 +220,25 @@ matching_symbol_names AS (
 	(
 		SELECT mp.upload_id, mp.id, mp.prefix AS symbol_name
 		FROM matching_prefixes mp
-		WHERE mp.search = ''
+		WHERE mp.search = '' AND false
 	) UNION (
 		SELECT
 			css.upload_id,
 			css.symbol_id,
-			l1.name || ' ' || l2.name || ' ' || l3.name || ' ' || l4.name || ' ' || l5.name AS symbol_name
-		FROM symbols_parts p
-		JOIN codeintel_scip_symbols_lookup l1 ON l1.scip_name_type = 'SCHEME'          AND l1.name = p.scheme
-		JOIN codeintel_scip_symbols_lookup l2 ON l2.scip_name_type = 'PACKAGE_MANAGER' AND l2.name = p.package_manager
-		JOIN codeintel_scip_symbols_lookup l3 ON l3.scip_name_type = 'PACKAGE_NAME'    AND l3.name = p.package_name
-		JOIN codeintel_scip_symbols_lookup l4 ON l4.scip_name_type = 'PACKAGE_VERSION' AND l4.name = p.package_version
-		JOIN codeintel_scip_symbols_lookup l5 ON l5.scip_name_type = 'DESCRIPTOR'      AND l5.name = p.descriptor
+			p.scheme || ' ' || p.package_manager || ' ' || p.package_name || ' ' || p.package_version || ' ' || p.descriptor AS symbol_name
+		FROM symbols_parts2 p
+		JOIN codeintel_scip_symbols_lookup l1 ON l1.upload_id = p.upload_id AND l1.scip_name_type = 'SCHEME'          AND l1.name = p.scheme
+		JOIN codeintel_scip_symbols_lookup l2 ON l2.upload_id = p.upload_id AND l2.scip_name_type = 'PACKAGE_MANAGER' AND l2.name = p.package_manager
+		JOIN codeintel_scip_symbols_lookup l3 ON l3.upload_id = p.upload_id AND l3.scip_name_type = 'PACKAGE_NAME'    AND l3.name = p.package_name
+		JOIN codeintel_scip_symbols_lookup l4 ON l4.upload_id = p.upload_id AND l4.scip_name_type = 'PACKAGE_VERSION' AND l4.name = p.package_version
+		JOIN codeintel_scip_symbols_lookup l5 ON l5.upload_id = p.upload_id AND l5.scip_name_type = 'DESCRIPTOR'      AND l5.name = p.descriptor
 		JOIN codeintel_scip_symbols css
-			ON  css.scheme_id = l1.id
+			ON  css.upload_id          = p.upload_id
+			AND css.scheme_id          = l1.id
 			AND css.package_manager_id = l2.id
-			AND css.package_name_id = l3.id
+			AND css.package_name_id    = l3.id
 			AND css.package_version_id = l4.id
-			AND css.descriptor_id = l5.id
-			AND css.upload_id = l1.upload_id
-			AND css.upload_id = l2.upload_id
-			AND css.upload_id = l3.upload_id
-			AND css.upload_id = l4.upload_id
-			AND css.upload_id = l5.upload_id
-		WHERE
-			css.upload_id = ANY(%s)
+			AND css.descriptor_id      = l5.id
 	)
 )
 `
