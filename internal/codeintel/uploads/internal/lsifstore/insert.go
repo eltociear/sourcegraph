@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"sort"
 	"sync/atomic"
 
@@ -388,6 +389,8 @@ func (s *scipWriter) flush(ctx context.Context) error {
 		}
 	}
 
+	fmt.Printf("Yo...\n")
+
 	for schema, schemeNode := range schemeTree {
 		if err := s.symbolLookupInserter.Insert(ctx, schemeNode.id, "SCHEME", schema, nil); err != nil {
 			return err
@@ -525,7 +528,7 @@ INSERT INTO codeintel_scip_symbols (
 	upload_id,
 	symbol_id,
 	descriptor_id,
-	descriptor_no_suffix_id
+	descriptor_no_suffix_id,
 	document_lookup_id,
 	schema_version,
 	definition_ranges,

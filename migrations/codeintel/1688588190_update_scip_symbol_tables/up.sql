@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS codeintel_scip_symbols_lookup (
 
 CREATE INDEX IF NOT EXISTS codeintel_scip_symbols_lookup_unique_fuzzy ON codeintel_scip_symbols_lookup(upload_id, scip_name_type, name);
 CREATE UNIQUE INDEX IF NOT EXISTS codeintel_scip_symbols_lookup_unique_precise ON codeintel_scip_symbols_lookup(upload_id, id);
-CREATE INDEX IF NOT EXISTS codeintel_scip_symbols_lookup_upload_id_parent_id ON codeintel_scip_symbols_lookup(upload_id, parent_id);
+-- CREATE INDEX IF NOT EXISTS codeintel_scip_symbols_lookup_upload_id_parent_id ON codeintel_scip_symbols_lookup(upload_id, parent_id);
 
 CREATE TABLE IF NOT EXISTS codeintel_scip_symbols_migration_progress (
     upload_id integer NOT NULL PRIMARY KEY,

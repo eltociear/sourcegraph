@@ -220,20 +220,16 @@ matching_symbol_names AS (
 		WHERE mp.search = '' AND false
 	) UNION (
 		SELECT
-			css.upload_id,
-			css.symbol_id,
+			ss.upload_id,
+			ss.symbol_id,
 			p.scheme || ' ' || p.package_manager || ' ' || p.package_name || ' ' || p.package_version || ' ' || p.descriptor AS symbol_name
 		FROM symbols_parts2 p
-		JOIN codeintel_scip_symbols_lookup l5 ON l5.upload_id = p.upload_id AND l5.scip_name_type = 'DESCRIPTOR' AND l5.name = p.descriptor)
-		JOIN codeintel_scip_symbols_lookup l4 ON l4.upload_id = p.upload_id AND l4.parent_id = l5.id             AND l4.name = p.package_version)
-		JOIN codeintel_scip_symbols_lookup l3 ON l3.upload_id = p.upload_id AND l3.parent_id = l4.id             AND l3.name = p.package_name)
-		JOIN codeintel_scip_symbols_lookup l2 ON l2.upload_id = p.upload_id AND l2.parent_id = l3.id             AND l2.name = p.package_manager)
-		JOIN codeintel_scip_symbols_lookup l1 ON l1.upload_id = p.upload_id AND l1.parent_id = l2.id             AND l1.name = p.scheme)
-		JOIN codeintel_scip_symbols css ON
-			css.upload_id = p.upload_id AND
-			css.descriptor_id = l5.id
-		WHERE
-			TRUE
+		JOIN codeintel_scip_symbols_lookup l5 ON l5.upload_id = p.upload_id AND l5.scip_name_type = 'DESCRIPTOR' AND l5.name = p.descriptor
+		JOIN codeintel_scip_symbols_lookup l4 ON l4.upload_id = p.upload_id AND l4.id = l5.parent_id             AND l4.name = p.package_version
+		JOIN codeintel_scip_symbols_lookup l3 ON l3.upload_id = p.upload_id AND l3.id = l4.parent_id             AND l3.name = p.package_name
+		JOIN codeintel_scip_symbols_lookup l2 ON l2.upload_id = p.upload_id AND l2.id = l3.parent_id             AND l2.name = p.package_manager
+		JOIN codeintel_scip_symbols_lookup l1 ON l1.upload_id = p.upload_id AND l1.id = l2.parent_id             AND l1.name = p.scheme
+		JOIN codeintel_scip_symbols ss        ON ss.upload_id = p.upload_id AND ss.descriptor_id = l5.id
 	)
 )
 `
