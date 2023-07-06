@@ -3,6 +3,8 @@ package scip
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"sort"
 	"time"
 
 	"github.com/keegancsmith/sqlf"
@@ -32,7 +34,7 @@ func NewSCIPSymbolsMigrator(codeintelStore *basestore.Store) *migrator {
 		fields: []fieldSpec{
 			{name: "symbol_id", postgresType: "integer not null", primaryKey: true},
 			{name: "document_lookup_id", postgresType: "integer not null", primaryKey: true},
-			{name: "scheme_id", postgresType: "integer", updateOnly: true},
+			{name: "scheme_id", postgresType: "integer", updateOnly: true}, // TODO - read as well so we can no-op on down?
 			{name: "package_manager_id", postgresType: "integer", updateOnly: true},
 			{name: "package_name_id", postgresType: "integer", updateOnly: true},
 			{name: "package_version_id", postgresType: "integer", updateOnly: true},
@@ -50,40 +52,37 @@ func (m *scipSymbolsMigrator) Interval() time.Duration { return time.Second }
 // MigrateRowUp reads the payload of the given row and returns an updateSpec on how to
 // modify the record to conform to the new schema.
 func (m *scipSymbolsMigrator) MigrateUp(ctx context.Context, uploadID int, tx *basestore.Store, rows *sql.Rows) (_ [][]any, err error) {
+	fmt.Printf("A\n")
+	defer fmt.Printf("B\n")
+
 	type symbolInDocument struct {
 		symbolID         int
 		documentLookupID int
 	}
-	var symbolPairs []symbolInDocument
-
-	if err := func() (err error) {
-		defer func() { err = basestore.CloseRows(rows, err) }()
-
-		for rows.Next() {
-			var symbolID, documentLookupID int
-			if err := rows.Scan(&symbolID, &documentLookupID); err != nil {
-				return err
-			}
-
-			symbolPairs = append(symbolPairs, symbolInDocument{symbolID, documentLookupID})
-		}
-
-		return nil
-	}(); err != nil {
+	scanCandidates := basestore.NewSliceScanner(func(s dbutil.Scanner) (sd symbolInDocument, _ error) {
+		err := rows.Scan(&sd.symbolID, &sd.documentLookupID)
+		return sd, err
+	})
+	symbolPairs, err := scanCandidates(rows, nil)
+	if err != nil {
 		return nil, err
 	}
 
-	var symbolIDs []int
+	symbolIDMap := make(map[int]struct{}, len(symbolPairs))
 	for _, symbol := range symbolPairs {
-		symbolIDs = append(symbolIDs, symbol.symbolID)
+		symbolIDMap[symbol.symbolID] = struct{}{}
 	}
+	symbolIDs := make([]int, 0, len(symbolIDMap))
+	for symbolID := range symbolIDMap {
+		symbolIDs = append(symbolIDs, symbolID)
+	}
+	sort.Ints(symbolIDs)
 
-	scanner := basestore.NewMapScanner[int, string](func(s dbutil.Scanner) (symbolID int, symbolName string, _ error) {
+	scanSymbolNamesByID := basestore.NewMapScanner(func(s dbutil.Scanner) (symbolID int, symbolName string, _ error) {
 		err := s.Scan(&symbolID, &symbolName)
 		return symbolID, symbolName, err
 	})
-
-	symbolsNamesByID, err := scanner(tx.Query(ctx, sqlf.Sprintf(`
+	symbolNamesByID, err := scanSymbolNamesByID(tx.Query(ctx, sqlf.Sprintf(`
 		WITH RECURSIVE
 		symbols(id, upload_id, suffix, prefix_id) AS (
 			(
@@ -119,13 +118,63 @@ func (m *scipSymbolsMigrator) MigrateUp(ctx context.Context, uploadID int, tx *b
 		return nil, err
 	}
 
-	symbolNames := make([]string, 0, len(symbolsNamesByID))
-	for _, symbolName := range symbolsNamesByID {
+	symbolNames := make([]string, 0, len(symbolNamesByID))
+	for _, symbolName := range symbolNamesByID {
 		symbolNames = append(symbolNames, symbolName)
 	}
+	sort.Strings(symbolNames)
 
-	// TODO - needs to be unique within an index?
-	nextSymbolLookupID := 0
+	//
+	//
+
+	nextSymbolLookupID, _, err := basestore.ScanFirstInt(tx.Query(ctx, sqlf.Sprintf(`
+		SELECT symbol_id
+		FROM codeintel_scip_symbols_migration_progress
+		WHERE upload_id = %s
+	`,
+		uploadID,
+	)))
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		err = errors.Append(err, tx.Exec(ctx, sqlf.Sprintf(`
+			UPDATE codeintel_scip_symbols_migration_progress
+			SET symbol_id = %s
+			WHERE upload_id = %s
+		`,
+			nextSymbolLookupID, uploadID,
+		)))
+	}()
+
+	//
+	//
+
+	const newSCIPWriterTemporarySymbolLookupTableQuery = `
+		CREATE TEMPORARY TABLE t_codeintel_scip_symbols_lookup(
+			id integer NOT NULL,
+			name text NOT NULL,
+			scip_name_type text NOT NULL
+		) ON COMMIT DROP
+	`
+
+	if err := tx.Exec(ctx, sqlf.Sprintf(newSCIPWriterTemporarySymbolLookupTableQuery)); err != nil {
+		return nil, err
+	}
+
+	symbolLookupInserter := batch.NewInserter(
+		ctx,
+		tx.Handle(),
+		"t_codeintel_scip_symbols_lookup",
+		batch.MaxNumPostgresParameters,
+		"id",
+		"name",
+		"scip_name_type",
+	)
+
+	//
+	//
 
 	schemes := make(map[string]int)
 	managers := make(map[string]int)
@@ -186,44 +235,34 @@ func (m *scipSymbolsMigrator) MigrateUp(ctx context.Context, uploadID int, tx *b
 		"DESCRIPTOR_NO_SUFFIX": descriptorsNoSuffix,
 	}
 
-	const newSCIPWriterTemporarySymbolLookupTableQuery = `
-		CREATE TEMPORARY TABLE t_codeintel_scip_symbols_lookup(
-			id integer NOT NULL,
-			upload_id integer NOT NULL,
-			name text NOT NULL,
-			scip_name_type text NOT NULL
-		) ON COMMIT DROP
-	`
-	if err := tx.Exec(ctx, sqlf.Sprintf(newSCIPWriterTemporarySymbolLookupTableQuery)); err != nil {
-		return nil, err
-	}
-
-	symbolLookupInserter := batch.NewInserter(
-		ctx,
-		tx.Handle(),
-		"t_codeintel_scip_symbols_lookup",
-		batch.MaxNumPostgresParameters,
-		"id",
-		"upload_id",
-		"name",
-		"scip_name_type",
-	)
-
 	for nameType, m := range maps {
 		for symbolName, symbolID := range m {
-			if err := symbolLookupInserter.Insert(ctx, symbolID, uploadID, symbolName, nameType); err != nil {
+			if err := symbolLookupInserter.Insert(ctx, symbolID, symbolName, nameType); err != nil {
 				return nil, err
 			}
 		}
 	}
 
+	//
+	//
+
 	if err := symbolLookupInserter.Flush(ctx); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Exec(ctx, sqlf.Sprintf(`
+		INSERT INTO codeintel_scip_symbols_lookup (id, upload_id, name, scip_name_type)
+		SELECT id, %s, name, scip_name_type
+		FROM t_codeintel_scip_symbols_lookup
+	`,
+		uploadID,
+	)); err != nil {
 		return nil, err
 	}
 
 	values := make([][]any, 0, len(symbolPairs))
 	for _, pair := range symbolPairs {
-		ids := cache[symbolsNamesByID[pair.symbolID]]
+		ids := cache[symbolNamesByID[pair.symbolID]]
 
 		values = append(values, []any{
 			pair.symbolID,
@@ -248,7 +287,35 @@ func (m *scipSymbolsMigrator) MigrateUp(ctx context.Context, uploadID int, tx *b
 // TODO - redocument
 // MigrateRowDown sets num_diagnostics back to zero to undo the migration up direction.
 func (m *scipSymbolsMigrator) MigrateDown(ctx context.Context, uploadID int, tx *basestore.Store, rows *sql.Rows) (_ [][]any, err error) {
-	defer func() { err = basestore.CloseRows(rows, err) }()
+	fmt.Printf("C\n")
+	defer fmt.Printf("D\n")
 
-	return nil, errors.New("down unimplemented")
+	type symbolInDocument struct {
+		symbolID         int
+		documentLookupID int
+	}
+	scanCandidates := basestore.NewSliceScanner(func(s dbutil.Scanner) (sd symbolInDocument, _ error) {
+		err := rows.Scan(&sd.symbolID, &sd.documentLookupID)
+		return sd, err
+	})
+	symbolPairs, err := scanCandidates(rows, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	values := make([][]any, 0, len(symbolPairs))
+	for _, pair := range symbolPairs {
+		values = append(values, []any{
+			pair.symbolID,
+			pair.documentLookupID,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+		})
+	}
+
+	return values, nil
 }
