@@ -314,6 +314,9 @@ func (s *scipWriter) flush(ctx context.Context) error {
 	}
 	sort.Strings(symbolNames)
 
+	//
+	//
+
 	schemes := make(map[string]int)
 	managers := make(map[string]int)
 	packageNames := make(map[string]int)
@@ -380,6 +383,9 @@ func (s *scipWriter) flush(ctx context.Context) error {
 			}
 		}
 	}
+
+	//
+	//
 
 	for i, invertedRangeIndexes := range invertedRangeIndexes {
 		for _, index := range invertedRangeIndexes {
